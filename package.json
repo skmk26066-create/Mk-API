@@ -1,5 +1,5 @@
 {
-  "name": "cloud-leech-server",
+  "name": "mk-api-leech",
   "version": "1.0.0",
   "description": "Stream files from direct URL to Cloud Storage APIs",
   "main": "index.js",
