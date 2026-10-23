@@ -7,69 +7,46 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.get('/', (req, res) => {
-    res.send("Server is Running smoothly!");
-});
-
-// मेन अपलोड API
 app.post('/api/upload', async (req, res) => {
     const { directUrl, apis } = req.body; 
-    // apis का फॉर्मेट: [{ provider: "Diskwala", key: "xyz", uploadUrl: "https://..." }]
 
     if (!directUrl || !apis || apis.length === 0) {
-        return res.status(400).json({ error: "Direct URL and at least one API key are required." });
+        return res.status(400).json({ error: "URL and API required." });
     }
 
     let results = [];
+    const fileName = directUrl.substring(directUrl.lastIndexOf('/') + 1) || 'video_file.mp4';
 
-    try {
-        console.log(`Starting download stream for: ${directUrl}`);
-        
-        // 1. रिमोट URL से डेटा स्ट्रीम लेना
-        const fileStreamResponse = await axios({
-            method: 'GET',
-            url: directUrl,
-            responseType: 'stream'
-        });
+    for (const api of apis) {
+        try {
+            const fileStreamResponse = await axios({
+                method: 'GET',
+                url: directUrl,
+                responseType: 'stream'
+            });
 
-        // फाइल का नाम URL से निकालना
-        const fileName = directUrl.substring(directUrl.lastIndexOf('/') + 1) || 'uploaded_file.mp4';
+            const formData = new FormData();
+            formData.append('key', api.key); 
+            formData.append('file', fileStreamResponse.data, fileName);
 
-        // 2. हर API पर डेटा अपलोड करना
-        for (const api of apis) {
-            try {
-                const formData = new FormData();
-                // API के अनुसार फॉर्म पैरामीटर्स सेट करें
-                formData.append('key', api.key); 
-                formData.append('file', fileStreamResponse.data, fileName);
+            // यह Headers API को बेवकूफ बनाएंगे कि अपलोड ब्राउज़र/मोबाइल से हो रहा है
+            const customHeaders = {
+                ...formData.getHeaders(),
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+                'Accept': '*/*',
+                'Connection': 'keep-alive'
+            };
 
-                console.log(`Uploading to ${api.provider}...`);
+            const uploadResponse = await axios.post(api.uploadUrl, formData, {
+                headers: customHeaders
+            });
 
-                // 3. क्लाउड API पर स्ट्रीम भेजना (असली डिवाइस अपलोड की तरह)
-                const uploadResponse = await axios.post(api.uploadUrl, formData, {
-                    headers: { ...formData.getHeaders() }
-                });
-
-                results.push({
-                    provider: api.provider,
-                    status: "Success",
-                    link: uploadResponse.data.link || uploadResponse.data // API के रिस्पॉन्स के अनुसार बदलें
-                });
-
-            } catch (apiError) {
-                results.push({
-                    provider: api.provider,
-                    status: "Failed",
-                    error: apiError.message
-                });
-            }
+            results.push({ provider: api.provider, status: "Success", link: uploadResponse.data.link || uploadResponse.data });
+        } catch (apiError) {
+            results.push({ provider: api.provider, status: "Failed", error: apiError.message });
         }
-
-        res.json({ message: "Upload Process Completed", results });
-
-    } catch (error) {
-        res.status(500).json({ error: "Failed to fetch Direct URL", details: error.message });
     }
+    res.json({ message: "Upload Process Completed", results });
 });
 
 const PORT = process.env.PORT || 3000;
